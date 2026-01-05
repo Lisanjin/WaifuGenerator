@@ -1,0 +1,23 @@
+{
+    "image_reader":{
+        "deepdanbooru":{
+            "cookie":""
+        }
+    },
+    "url_reader":{
+        "jina":{
+            "api_key":""
+        }
+    },
+    "search_engine":{
+        "google":{
+            "api_key":"",
+            "timeout":30
+        }
+    },
+    "llm":{
+        "endpoint": "",
+        "key": "",
+        "model": ""
+    }
+}

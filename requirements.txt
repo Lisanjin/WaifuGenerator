@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+requests
+beautifulsoup4
+openai
+PyMuPDF
+python-docx
+chardet
+pandas
+Pillow

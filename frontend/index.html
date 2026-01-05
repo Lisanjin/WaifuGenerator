@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waifu Generator</title>
+    <!-- 引入 FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="main-wrapper">
+    <div class="container">
+        <header>
+            <h2>Waifu Generator</h2>
+            <div class="steps-container">
+                <div class="step-item active" id="indicator-1">
+                    <div class="step-circle">1</div>
+                    <div class="step-text">基本信息</div>
+                </div>
+                <div class="step-line"></div>
+                <div class="step-item" id="indicator-2">
+                    <div class="step-circle">2</div>
+                    <div class="step-text">参考资料</div>
+                </div>
+                <div class="step-line"></div>
+                <!-- Step 3 现在是数据处理 -->
+                <div class="step-item" id="indicator-3">
+                    <div class="step-circle">3</div>
+                    <div class="step-text">数据解析</div>
+                </div>
+                <div class="step-line"></div>
+                <!-- Step 4 结果导出 -->
+                <div class="step-item" id="indicator-4">
+                    <div class="step-circle">4</div>
+                    <div class="step-text">生成结果</div>
+                </div>
+            </div>
+        </header>
+
+        <form id="dataForm" onsubmit="return false;">
+            <!-- Step 1 ... (内容同上，省略以节省篇幅，保持不变) ... -->
+             <div class="step-content active fade-in" id="step-1">
+                <div class="form-section">
+                    <div class="form-group">
+                        <div class="label-row">
+                            <label for="character_name">角色名称<span class="required">*</span></label>
+                            <div class="tooltip-container">
+                                <i class="fa-solid fa-circle-question tooltip-icon"></i>
+                                <div class="tooltip-content">角色的主要名称（官方名或最常用名称）。</div>
+                            </div>
+                        </div>
+                        <input type="text" id="character_name" name="character_name" placeholder="Exp: フラウ" required>
+                    </div>
+    
+                    <div class="form-group">
+                        <div class="label-row">
+                            <label for="character_aliases">角色别名</label>
+                            <div class="tooltip-container">
+                                <i class="fa-solid fa-circle-question tooltip-icon"></i>
+                                <div class="tooltip-content">包含昵称、译名、别称、简称等。<br>请用英文逗号 "," 分割。</div>
+                            </div>
+                        </div>
+                        <input type="text" id="character_aliases" name="character_aliases" placeholder="Exp: frau,芙拉">
+                    </div>
+    
+                    <div class="form-group">
+                        <div class="label-row">
+                            <label for="source_work_name">所属作品</label>
+                            <div class="tooltip-container">
+                                <i class="fa-solid fa-circle-question tooltip-icon"></i>
+                                <div class="tooltip-content">角色所属作品的主要名称。<br>例如小说名、游戏名、动画名等。</div>
+                            </div>
+                        </div>
+                        <input type="text" id="source_work_name" name="source_work_name" placeholder="Exp: Deep One 虚無と夢幻のフラグメント">
+                    </div>
+    
+                    <div class="form-group">
+                        <div class="label-row">
+                            <label for="source_work_aliases">作品别名</label>
+                            <div class="tooltip-container">
+                                <i class="fa-solid fa-circle-question tooltip-icon"></i>
+                                <div class="tooltip-content">包含不同语言译名、简称、旧称或别称。<br>请用英文逗号 "," 分割。</div>
+                            </div>
+                        </div>
+                        <input type="text" id="source_work_aliases" name="source_work_aliases" placeholder="Exp: とのフラ,DeepOne">
+                    </div>
+    
+                    <div class="form-group">
+                        <div class="label-row">
+                            <label for="user_requirement">用户需求</label>
+                            <div class="tooltip-container">
+                                <i class="fa-solid fa-circle-question tooltip-icon"></i>
+                                <div class="tooltip-content wide">
+                                    针对该角色提出的具体需求描述。<br>
+                                    示例：角色设定补全、背景故事整理、性格分析、用于创作/问答/生成内容等。
+                                </div>
+                            </div>
+                        </div>
+                        <textarea id="user_requirement" name="user_requirement" rows="5" placeholder="请详细描述针对该角色的需求..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="step-content fade-in" id="step-2">
+                <div class="info-banner">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>请为角色添加可靠的参考资料（Wiki链接、设定图、设定集文档等）。</span>
+                </div>
+                
+                <div id="reference-list"></div>
+
+                <button type="button" class="btn-dashed" id="add-ref-btn">
+                    <i class="fa-solid fa-plus"></i> 添加一条参考资料
+                </button>
+            </div>
+
+            <!-- Step 3 (Placeholder) -->
+            <div class="step-content fade-in" id="step-3">
+                <div class="processing-header">
+                    <h3>正在分析资料并构建知识库...</h3>
+                    <p class="sub-text">Agent 正在逐项读取资料并进行多模态解析。</p>
+                </div>
+                <!-- 动态生成的任务列表容器 -->
+                <div class="task-list" id="task-list-container">
+                    <!-- Javascript will inject items here -->
+                </div>
+                
+                <div id="processing-done-msg" class="hidden" style="text-align:center; margin-top:20px; color:#10b981;">
+                    <i class="fa-solid fa-check-circle"></i> 所有步骤处理完毕
+                </div>
+            </div>
+            <!-- Step 4: Result -->
+            <div class="step-content fade-in" id="step-4">
+                <div class="success-card">
+                    <div class="success-icon"><i class="fa-solid fa-file-export"></i></div>
+                    <h3>人物卡生成完毕</h3>
+                    <p>JSON 数据已准备好。</p>
+                    <div style="margin-top:20px;">
+                        <button type="button" class="btn btn-outline" onclick="alert('Mock Export')">
+                            <i class="fa-solid fa-download"></i> 下载 PNG
+                        </button>
+                        <button type="button" class="btn btn-outline" onclick="alert('Mock Copy')">
+                            <i class="fa-regular fa-copy"></i> 复制 JSON
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="actions">
+                <button type="button" id="prevBtn" class="btn btn-outline hidden" onclick="changeStep(-1)">上一步</button>
+                <button type="button" id="nextBtn" class="btn btn-primary" onclick="changeStep(1)">下一步</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
