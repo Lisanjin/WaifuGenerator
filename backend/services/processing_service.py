@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore")
 MOCK_DB = {}
 
 # 配置文件路径
-CONFIG_PATH = "config_test.json"
+CONFIG_PATH = "config.json"
 
 # ==========================================
 # 0. 配置管理 (Config Manager)
@@ -47,13 +47,9 @@ client = OpenAI(
 # 1. 核心工具函数 (Integration Helpers)
 # ==========================================
 def reference_info_prompts_creator(data):
-    try:
-        with open("backend/prompts/reference_prompts", "r", encoding="utf-8") as f:
-            prompts = f.read()
-    except FileNotFoundError:
-        # 简单的回退或错误提示，防止路径不对导致后续崩溃
-        print("[!] Prompt file not found.")
-        prompts = ""
+    with open("backend/prompts/reference_prompts", "r", encoding="utf-8") as f:
+        prompts = f.read()
+
     if data["reliability_score"] == 1:
         prompts = prompts.replace("%RELIABILITY%", "低")
     elif data["reliability_score"] == 2:
@@ -67,13 +63,8 @@ def reference_info_prompts_creator(data):
     return prompts
 
 def character_info_prompts_creator(data: CharacterModel):
-    try:
-        with open("backend/prompts/chara_info_prompts", "r", encoding="utf-8") as f:
-            prompts = f.read()
-    except FileNotFoundError:
-        # 简单的回退或错误提示，防止路径不对导致后续崩溃
-        print("[!] Prompt file not found.")
-        prompts = ""
+    with open("backend/prompts/chara_info_prompts", "r", encoding="utf-8") as f:
+        prompts = f.read()
 
     prompts = prompts.replace("%CHARACTER_NAME%", data.character_name)
 
@@ -106,13 +97,8 @@ def character_info_prompts_creator(data: CharacterModel):
     return prompts
 
 def search_prompts_creator(data: CharacterModel):
-    try:
-        with open("backend/prompts/deepresearch_prompts", "r", encoding="utf-8") as f:
-            prompts = f.read()
-    except FileNotFoundError:
-        # 简单的回退或错误提示，防止路径不对导致后续崩溃
-        print("[!] Prompt file not found.")
-        prompts = "Search for %CHARACTER_NAME%."
+    with open("backend/prompts/deepresearch_prompts", "r", encoding="utf-8") as f:
+        prompts = f.read()
 
     prompts = prompts.replace("%CHARACTER_NAME%", data.character_name)
 
@@ -166,7 +152,6 @@ def url_reader(url: str, config: dict, type: str = "jina"):
     统一接口：读取URL内容
     配置来源：config['url_reader'][type]
     """
-    # 从 verify config 中获取 key
     tool_config = config.get("url_reader", {}).get(type, {})
     api_key = tool_config.get("api_key", "")
 
