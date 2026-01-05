@@ -10,6 +10,8 @@ from models import CharacterModel, ProcessState, SubTaskResult, TaskStatus,Chara
 from utils.doc import load_docx, load_pdf, load_text_file, load_excel
 from utils.image import resize_image, blank_image,save_png
 from openai import OpenAI
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # 忽略 image_reader 中 verify=False产生的警告
 warnings.filterwarnings("ignore")
@@ -252,10 +254,9 @@ def search_reader(query: str, config: dict, type: str = "google"):
     
     if not api_key:
          return {"status": "error", "message": f"Missing API Key for search type: {config_key}"}
-
     if type == "google-deepresearch" or type == "google":
         try:
-            print(f"[*] Starting Deep Research for: {query[:50]}...")
+            print(f"[*] Starting Deep Research for: \n{query[:150]}...")
             
             # === 1. 构建请求 ===
             base_url = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -268,12 +269,15 @@ def search_reader(query: str, config: dict, type: str = "google"):
                 "agent": "deep-research-pro-preview-12-2025",
                 "background": True
             }
-
+            # 【增加】请求层的重试策略，防止第一次握手就失败
+            session = requests.Session()
+            retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+            session.mount('https://', HTTPAdapter(max_retries=retries))
             try:
-                response = requests.post(base_url, headers=headers, json=payload, timeout=60)
+                # 使用 session 发送请求
+                response = session.post(base_url, headers=headers, json=payload, timeout=60)
             except requests.exceptions.RequestException as req_err:
-                 return {"status": "error", "message": f"Network Error: {req_err}"}
-
+                 return {"status": "error", "message": f"Network Error (Initial Request): {req_err}"}
             if response.status_code != 200:
                 print(f"[DEBUG] Error Body: {response.text}")
                 return {"status": "error", "message": f"API Error ({response.status_code})"}
@@ -292,25 +296,49 @@ def search_reader(query: str, config: dict, type: str = "google"):
                 return {"status": "error", "message": "Cannot find 'id' in response."}
             
             print(f"[*] Research ID: {interaction_id}. Waiting for completion...")
-
-            # === 3. 轮询状态 ===
+            # === 3. 轮询状态 (修改核心部分) ===
             poll_url = f"{base_url}/{interaction_id}"
-            max_retries = tool_config.get("timeout",30) * 6
+            max_retries = tool_config.get("timeout", 30) * 6
             count = 0
             
+            # 连续网络错误计数器（防止死循环）
+            consecutive_net_errors = 0 
+            MAX_CONSECUTIVE_ERRORS = 10 
             while count < max_retries:
                 time.sleep(10) 
                 count += 1
                 
-                check_resp = requests.get(poll_url, headers=headers, timeout=30)
-                
+                try:
+                    # 【核心修改】将 GET 请求包裹在 try-except 中
+                    # 这里也可以复用上面的 session，但为了保险起见，这里独立捕获更灵活
+                    check_resp = requests.get(poll_url, headers=headers, timeout=30)
+                    
+                    # 如果请求成功，重置连续错误计数
+                    consecutive_net_errors = 0 
+                except requests.exceptions.RequestException as e:
+                    # 【关键点】捕获网络异常（SSL, Timeout, ConnectionError等）
+                    consecutive_net_errors += 1
+                    err_msg = str(e)
+                    # 只有连续错误多次才打印详细日志，避免刷屏，或者简单的提示
+                    print(f"[!] Network fluctuation ({consecutive_net_errors}/{MAX_CONSECUTIVE_ERRORS}): {err_msg.split('(')[0]}... Retrying...")
+                    
+                    if consecutive_net_errors >= MAX_CONSECUTIVE_ERRORS:
+                        return {"status": "error", "message": f"Polling failed: Network unstable ({str(e)})"}
+                    
+                    # 遇到网络错误，直接跳过本次循环，进入下一次 sleep 和重试
+                    continue
+                # --- 以下是正常的 HTTP 状态码处理 ---
                 if check_resp.status_code != 200:
-                    print(f"[!] Polling failed ({check_resp.status_code}). Retrying...")
+                    print(f"[!] Polling HTTP error ({check_resp.status_code}). Retrying...")
+                    # HTTP 错误也视为一种需要重试的情况，不立即报错
                     continue
                 
-                check_data = check_resp.json()
+                try:
+                    check_data = check_resp.json()
+                except ValueError:
+                    print("[!] Invalid JSON received. Retrying...")
+                    continue
                 status = check_data.get("status")
-                
                 print(f"[*] Research Status ({count*10}s): {status}") 
                 
                 if status == "completed":
@@ -325,8 +353,7 @@ def search_reader(query: str, config: dict, type: str = "google"):
                     error_msg = check_data.get("error", "Unknown error")
                     return {"status": "error", "message": f"Deep Research Failed: {error_msg}"}
             
-            return {"status": "error", "message": "Timeout: Research took too long (>10 mins)."}
-
+            return {"status": "error", "message": "Timeout: Research took too long."}
         except Exception as e:
             return {"status": "error", "message": f"Exception: {str(e)}"}
     
@@ -393,7 +420,7 @@ def _processing_logic(process_id: str, data: CharacterModel):
         elif ref.resource_type == "search":
             title = f"网络搜索: {data.character_name}"
             t_type = "search"
-            task_payload = search_prompts_creator(data)
+            task_payload["ref_obj"].resource_url = search_prompts_creator(data)
         
         tasks_queue.append({
             "step_id": f"step_ref_{idx}",
@@ -465,7 +492,7 @@ def _processing_logic(process_id: str, data: CharacterModel):
             elif task_def["type"] == "search":
 
                 res = search_reader(
-                    query=task_def["payload"], 
+                    query=task_def["payload"]["ref_obj"].resource_url, 
                     config=current_config,
                     type="google-deepresearch"
                 )
