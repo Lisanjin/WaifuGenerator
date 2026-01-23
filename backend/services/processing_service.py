@@ -20,7 +20,11 @@ warnings.filterwarnings("ignore")
 MOCK_DB = {}
 
 # 配置文件路径
-CONFIG_PATH = "config.json"
+DEBUG_MODE = True
+if DEBUG_MODE:
+    CONFIG_PATH = "config_test.json"
+else:
+    CONFIG_PATH = "config.json"
 
 # ==========================================
 # 0. 配置管理 (Config Manager)
@@ -257,6 +261,9 @@ def search_reader(query: str, config: dict, type: str = "google"):
     if type == "google-deepresearch" or type == "google":
         try:
             print(f"[*] Starting Deep Research for: \n{query[:150]}...")
+            if DEBUG_MODE:
+                with open("debug/search_reader_prompts", "w", encoding="utf-8") as f:
+                    f.write(query)
             
             # === 1. 构建请求 ===
             base_url = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -339,6 +346,7 @@ def search_reader(query: str, config: dict, type: str = "google"):
                     print("[!] Invalid JSON received. Retrying...")
                     continue
                 status = check_data.get("status")
+                print(f"[DEBUG] Response: {check_data}")
                 print(f"[*] Research Status ({count*10}s): {status}") 
                 
                 if status == "completed":
@@ -613,6 +621,11 @@ def _mock_llm_generation(char_data: CharacterModel, materials: list) -> str:
     messages = []
     messages.append({"role": "system", "content": sys_prompts})
     messages.append({"role": "user", "content": character_info_prompts_creator(char_data)})
+
+    if DEBUG_MODE:
+        with open("debug/llm_generation_prompts", "w", encoding="utf-8") as f:
+            f.write(sys_prompts + character_info_prompts_creator(char_data))
+        
     for material in materials:
         messages.append({"role": "user", "content": reference_info_prompts_creator(material)})
 
