@@ -518,7 +518,8 @@ def _processing_logic(process_id: str, data: CharacterModel):
             # === 任务失败 ===
             print(f"[!] Task failed: {e}")
             current_sub_task.status = TaskStatus.FAILED
-            current_sub_task.result_summary = f"Error: {str(e)}"
+            current_sub_task.result_summary = f"Error (Retry {current_sub_task.retry_count}/{current_sub_task.max_retries}): {str(e)}"
+            current_sub_task.last_error = str(e)
     
     # 全部流程结束
     current_state.is_finished = True
@@ -663,3 +664,161 @@ def _mock_llm_generation(char_data: CharacterModel, materials: list) -> str:
     output_image = base64.b64encode(output_image).decode("utf-8")
 
     return json.dumps({"json": json_str,"image": output_image}, ensure_ascii=False, indent=4)
+
+# ==========================================
+# 4. 重试逻辑
+# ==========================================
+
+def retry_subtask(process_id: str, step_id: str) -> bool:
+    """
+    重试指定的子任务
+    """
+    state = MOCK_DB.get(process_id)
+    if not state:
+        raise ValueError("Process ID not found")
+
+    # 查找要重试的任务
+    task_to_retry = None
+    for task in state.sub_tasks:
+        if task.step_id == step_id:
+            task_to_retry = task
+            break
+
+    if not task_to_retry:
+        return False
+
+    # 检查任务是否可重试（状态为FAILED且重试次数未超限）
+    if task_to_retry.status != TaskStatus.FAILED:
+        return False
+
+    if task_to_retry.retry_count >= task_to_retry.max_retries:
+        return False
+
+    # 重置任务状态
+    task_to_retry.status = TaskStatus.PROCESSING
+    task_to_retry.retry_count += 1
+    task_to_retry.last_error = None
+
+    # 启动后台线程执行重试
+    t = threading.Thread(
+        target=_retry_task_logic,
+        args=(process_id, step_id, state.character_info)
+    )
+    t.start()
+
+    return True
+
+def _retry_task_logic(process_id: str, step_id: str, character_data: CharacterModel):
+    """
+    重试单个任务的逻辑
+    """
+    current_config = load_config()
+    state = MOCK_DB[process_id]
+
+    # 查找任务定义（从原始数据中）
+    task_def = None
+    for idx, ref in enumerate(character_data.reference):
+        if f"step_ref_{idx}" == step_id:
+            # 重建任务定义
+            title = ""
+            t_type = ""
+            if ref.resource_type == "image":
+                title = f"视觉分析: {ref.file_name or 'Image'}"
+                t_type = "image_analysis"
+            elif ref.resource_type == "file":
+                title = f"文档处理: {ref.file_name or 'Document'}"
+                t_type = "doc_analysis"
+            elif ref.resource_type == "url":
+                title = f"链接读取: {ref.resource_url}"
+                t_type = "link_crawl"
+            elif ref.resource_type == "search":
+                title = f"网络搜索: {character_data.character_name}"
+                t_type = "search"
+
+            task_def = {
+                "step_id": step_id,
+                "title": title,
+                "type": t_type,
+                "payload": {"ref_obj": ref}
+            }
+            break
+
+    if not task_def:
+        print(f"[!] Task definition not found for step_id: {step_id}")
+        return
+
+    # 执行任务
+    try:
+        result_content = ""
+
+        # === 分支处理逻辑 ===
+        if task_def["type"] == "image_analysis":
+            image_path = task_def["payload"]["ref_obj"].resource_url
+            print(f"[*] Retrying Image: {image_path}")
+
+            res = image_reader(
+                image_path=image_path,
+                config=current_config,
+                type="deepdanbooru"
+            )
+
+            if res["status"] == "success":
+                result_content = res["content"]
+            else:
+                raise Exception(res["message"])
+
+        elif task_def["type"] == "link_crawl":
+            target_url = task_def["payload"]["ref_obj"].resource_url
+            print(f"[*] Retrying URL: {target_url}")
+
+            res = url_reader(
+                url=target_url,
+                config=current_config,
+                type="jina"
+            )
+
+            if res["status"] == "success":
+                result_content = res["content"]
+            else:
+                raise Exception(res["message"])
+
+        elif task_def["type"] == "doc_analysis":
+            doc_path = task_def["payload"]["ref_obj"].resource_url
+            res = doc_reader(
+                doc_path=doc_path,
+            )
+            if res["status"] == "success":
+                result_content = res["content"]
+            else:
+                raise Exception(res["message"])
+
+        elif task_def["type"] == "search":
+            res = search_reader(
+                query=task_def["payload"]["ref_obj"].resource_url,
+                config=current_config,
+                type="google-deepresearch"
+            )
+
+            if res["status"] == "success":
+                result_content = res["content"]
+            else:
+                raise Exception(res["message"])
+
+        # === 任务成功 ===
+        # 更新任务状态
+        for task in state.sub_tasks:
+            if task.step_id == step_id:
+                task.status = TaskStatus.SUCCESS
+                task.result_summary = result_content
+                print(f"[*] Task {step_id} retry successful")
+                break
+
+    except Exception as e:
+        # === 任务失败 ===
+        print(f"[!] Task retry failed: {e}")
+        for task in state.sub_tasks:
+            if task.step_id == step_id:
+                task.status = TaskStatus.FAILED
+                task.result_summary = f"Error (Retry {task.retry_count}/{task.max_retries}): {str(e)}"
+                task.last_error = str(e)
+                break

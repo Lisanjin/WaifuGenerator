@@ -34,11 +34,14 @@ class CharacterModel(BaseModel):
 class SubTaskResult(BaseModel):
     step_id: str
     title: str
-    type: str 
+    type: str
     status: TaskStatus
     result_summary: Optional[str] = None
-    detail: Any = None 
-    reliability_score: int = 1 
+    detail: Any = None
+    reliability_score: int = 1
+    retry_count: int = 0
+    max_retries: int = 3
+    last_error: Optional[str] = None 
 
 class ProcessState(BaseModel):
     process_id: str
@@ -54,3 +57,7 @@ class UpdateTaskRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     process_id: str
+
+class RetryTaskRequest(BaseModel):
+    process_id: str
+    step_id: str

@@ -245,6 +245,18 @@ textarea { resize: vertical; }
 .btn-preview:hover { color: var(--primary-hover); }
 .btn-preview.active { text-decoration: none; font-weight: 600; }
 
+/* 重试按钮 */
+.btn-retry {
+    font-size: 12px; color: var(--danger-color); background: none; border: none;
+    cursor: pointer; text-decoration: underline; margin-top: 4px; text-align: left; padding: 0;
+}
+.btn-retry:hover { color: #dc2626; }
+.btn-retry:disabled {
+    color: #9ca3af;
+    cursor: not-allowed;
+    text-decoration: none;
+}
+
 /* === 新增：展开的编辑区域 === */
 .task-edit-area {
     width: 100%;

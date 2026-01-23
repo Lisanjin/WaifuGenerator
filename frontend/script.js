@@ -35,22 +35,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // === 导航逻辑 ===
 function changeStep(n) {
-    // 校验 Step 1
-    if (n === 1 && currentStep === 1 && !validateStep(currentStep)) return;
-
-    // Logic for Step 2 -> 3 (Submit)
-    if (currentStep === 2 && n === 1) {
-        startProcessingFlow();
+    // 向后导航：总是允许
+    if (n === -1) {
+        // 如果当前在步骤3且有正在进行的处理，需要警告用户
+        if (currentStep === 3 && pollingInterval) {
+            if (!confirm("返回上一步将取消正在进行的处理，是否继续？")) {
+                return;
+            }
+            // 停止轮询
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+        proceedStepChange(n);
         return;
     }
 
-    // Logic for Step 3 -> 4 (Generate)
-    if (currentStep === 3 && n === 1) {
-        triggerGeneration();
-        return;
-    }
+    // 向前导航：需要验证
+    if (n === 1) {
+        // 验证当前步骤
+        if (!validateStep(currentStep)) {
+            return;
+        }
 
-    proceedStepChange(n);
+        // 特殊逻辑处理
+        if (currentStep === 2) {
+            // 步骤2 -> 3：提交数据并开始处理
+            startProcessingFlow();
+            return;
+        } else if (currentStep === 3) {
+            // 步骤3 -> 4：触发生成
+            triggerGeneration();
+            return;
+        } else {
+            // 其他步骤正常前进
+            proceedStepChange(n);
+            return;
+        }
+    }
 }
 
 async function triggerGeneration() {
@@ -101,16 +122,14 @@ function proceedStepChange(n) {
 function updateButtons() {
     const prevBtn = document.getElementById("prevBtn");
     const nextBtn = document.getElementById("nextBtn");
-    // 上一步逻辑
-    if (currentStep === 1 || currentStep === 3 || currentStep === 4) {
+    // 上一步逻辑：除步骤1外都显示
+    if (currentStep === 1) {
         prevBtn.classList.add("hidden");
     } else {
         prevBtn.classList.remove("hidden");
     }
-    // 下一步逻辑
+    // 下一步逻辑：除步骤4外都显示
     if (currentStep === totalSteps) {
-        nextBtn.classList.add("hidden");
-    } else if (currentStep === 3) {
         nextBtn.classList.add("hidden");
     } else {
         nextBtn.classList.remove("hidden");
@@ -120,7 +139,42 @@ function updateButtons() {
 
 function validateStep(step) {
     if (step === 1) {
-        if (!document.getElementById('character_name').value) return false;
+        // 验证步骤1：角色名称必填
+        if (!document.getElementById('character_name').value.trim()) {
+            alert("请输入角色名称");
+            return false;
+        }
+        return true;
+    } else if (step === 2) {
+        // 验证步骤2：至少有一个参考资料
+        const referenceCards = document.querySelectorAll('.reference-card');
+        let hasValidReference = false;
+
+        referenceCards.forEach(card => {
+            const typeSelect = card.querySelectorAll('select')[0];
+            const typeVal = typeSelect.value;
+
+            if (typeVal === '链接') {
+                const urlInput = card.querySelector('.ref-url-input');
+                if (urlInput.value.trim()) hasValidReference = true;
+            } else if (typeVal === '搜索') {
+                hasValidReference = true; // 搜索不需要额外输入
+            } else {
+                // 文档或图片：检查是否有文件
+                const fileInput = card.querySelector('.ref-file-input');
+                if (fileInput.files.length > 0) hasValidReference = true;
+            }
+        });
+
+        if (!hasValidReference) {
+            alert("请至少添加一个有效的参考资料");
+            return false;
+        }
+        return true;
+    } else if (step === 3) {
+        // 验证步骤3：所有任务是否完成
+        // 注意：这里不强制要求所有任务成功，因为用户可能想重试失败的任务
+        return true;
     }
     return true;
 }
@@ -132,6 +186,15 @@ async function startProcessingFlow() {
     document.getElementById('task-list-container').innerHTML = '';
     processedStepIds.clear();
     document.getElementById('processing-done-msg').classList.add('hidden');
+
+    // 如果已有轮询，停止它
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+
+    // 重置processId，开始新的处理
+    processId = null;
 
     const formData = packFormData();
     try {
@@ -155,7 +218,7 @@ async function startProcessingFlow() {
                  finishProcessing();
              }, 4000);
         }, 500);
-        return; 
+        return;
         */
         // --- 模拟测试逻辑 End ---
 
@@ -462,9 +525,11 @@ function updateTaskElement(el, task) {
         // 更新图标
         el.querySelector('.task-icon-wrapper').innerHTML = getStatusIconHtml(task.status);
 
-        // 如果变成了 success，注入编辑功能
+        // 根据状态注入不同的功能
         if (task.status === 'success') {
             injectSuccessState(el, task);
+        } else if (task.status === 'failed') {
+            injectFailedState(el, task);
         }
     }
 }
@@ -491,6 +556,28 @@ function injectSuccessState(el, task) {
     }
 }
 
+// 辅助：注入失败状态的重试按钮
+function injectFailedState(el, task) {
+    const stepId = task.step_id;
+    const errorText = task.result_summary || "";
+
+    // 1. 在 task-actions-wrapper 插入“重试”按钮
+    const actionWrapper = el.querySelector('.task-actions-wrapper');
+    if (actionWrapper && actionWrapper.innerHTML === '') {
+        actionWrapper.innerHTML = `
+            <button type="button" class="btn-retry" onclick="retryTask('${stepId}')">
+                <i class="fa-solid fa-rotate-right"></i> 重试
+            </button>
+        `;
+    }
+
+    // 2. 填充 Textarea（如果有错误信息）
+    const textarea = el.querySelector(`#input-${stepId}`);
+    if (textarea && !textarea.value) {
+        textarea.value = errorText;
+    }
+}
+
 // 切换编辑框显示/隐藏
 window.toggleTaskEdit = function (stepId) {
     const area = document.getElementById(`edit-area-${stepId}`);
@@ -503,6 +590,53 @@ window.toggleTaskEdit = function (stepId) {
     } else {
         area.style.display = 'none';
         if (btn) btn.classList.remove('active');
+    }
+};
+
+// 重试失败的任务
+window.retryTask = async function (stepId) {
+    if (!processId) {
+        alert("未找到任务ID");
+        return;
+    }
+
+    const btn = document.querySelector(`#task-${stepId} .btn-retry`);
+    if (!btn) return;
+
+    // 禁用按钮防止重复点击
+    btn.disabled = true;
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 重试中...`;
+
+    try {
+        const res = await fetch('/api/file/retry_task', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                process_id: processId,
+                step_id: stepId
+            })
+        });
+
+        if (res.ok) {
+            btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> 已提交重试`;
+            btn.classList.add('saved');
+            setTimeout(() => {
+                btn.innerHTML = originalContent;
+                btn.classList.remove('saved');
+                btn.disabled = false;
+            }, 1500);
+        } else {
+            const error = await res.text();
+            alert(`重试失败: ${error}`);
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+        }
+    } catch (e) {
+        console.error(e);
+        alert("网络错误");
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
     }
 };
 

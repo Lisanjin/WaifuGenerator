@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import List
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from models import CharacterModel, UpdateTaskRequest, GenerateRequest
+from models import CharacterModel, UpdateTaskRequest, GenerateRequest, RetryTaskRequest
 from services import processing_service
 
 
@@ -104,5 +104,18 @@ async def generate_card(req: GenerateRequest):
     try:
         processing_service.start_card_generation(req.process_id)
         return {"status": "success", "message": "Generation started"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@router.post("/retry_task")
+async def retry_task(req: RetryTaskRequest):
+    """
+    重试失败的任务
+    """
+    try:
+        success = processing_service.retry_subtask(req.process_id, req.step_id)
+        if not success:
+            raise HTTPException(status_code=400, detail="Retry failed, task not found or not retryable.")
+        return {"status": "success", "message": "Task retry started"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
